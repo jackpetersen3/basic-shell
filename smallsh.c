@@ -9,6 +9,9 @@ struct input *getInput();
 struct input *parseInput(char * buffer);
 void cdCommand(struct input *currInput);
 void init(struct input *currInput);
+void inputFile(struct input *currInput);
+void outputFile(struct input * currInput);
+
 int main()
 {
 	struct input * currInput = getInput();
@@ -23,10 +26,16 @@ int main()
 			getInput();
 		}
 		//user entered cd
-		else if(strncmp(currInput->commandArgc[0], "cd", 2) == 0)
+		else if(strcmp(currInput->commandArgc[0], "cd") == 0)
 		{
 			cdCommand(currInput);
 		}
+		//kill background proccesses and exit program
+		else if(strcmp(currInput->commandArgc[0], "exit") == 0)
+		{
+			exit(1);
+		}
+		//fork a new procceses and exec() the commands
 		else
 		{
 			pid_t spawnPid = -5;
@@ -40,6 +49,23 @@ int main()
 					exit(1);
 					break;
 				case 0:
+					//check for both input and putput redirection
+					if(currInput->inFile != NULL && currInput->outFile != NULL)
+			                {
+                        			inputFile(currInput);
+                        			outputFile(currInput);
+                        		}
+					//check for input redirection
+		                        else if(currInput->inFile != NULL)
+		                        {
+                		                inputFile(currInput);
+                        		}
+					//check for output redirection
+					else if(currInput->outFile != NULL)
+		                        {
+                		                outputFile(currInput);
+                        		}
+					
 					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
 					if(execStatus == -1)
 					{
@@ -47,6 +73,8 @@ int main()
 						exit(1);
 						break;
 					}
+
+					
 				default:
 					spawnPid = waitpid(spawnPid, &childStatus, 0);
 				//	printf("PARENT(%d): child(%d)\n", getpid(), spawnPid);
@@ -67,7 +95,7 @@ struct input *parseInput(char * buffer)
         struct input *currInput = malloc(sizeof(struct input));
         char *savePtr = NULL;
 	//get command
-        char * token = strtok_r(buffer," \n", &savePtr);
+        char * token = strtok_r(buffer," ", &savePtr);
 	currInput->commandArgc[0] = strdup(token);
 	token = strtok_r(NULL, " \n", &savePtr);
 //	printf("%s", token);
@@ -123,11 +151,12 @@ struct input *getInput()
         size_t len = 0;
         ssize_t nRead = 0;
         printf(": ");
-//	fflush(stdout);
+	fflush(stdout);
         nRead = getline(&buffer, &len, stdin);
 	if(strlen(buffer) == 1)
 	{
-		getInput();
+		buffer[0] = '#';
+		
 	}
 	else
 	{
@@ -138,6 +167,7 @@ struct input *getInput()
         {
                 currLine->flag =1;
         }
+	free(buffer);
 	return currLine;
 
 }
@@ -172,3 +202,29 @@ void init(struct input * currInput)
 	currInput->ampersand = 0;
 
 }
+
+//this program handes file input redirection
+void inputFile(struct input * currInput)
+{
+	int infile = 0;
+	//open file for reading
+	infile = open(currInput->inFile, O_RDONLY);
+	if(infile == -1)
+	{
+		printf("Cannot open file %s for reading\n", currInput->inFile);
+	}
+	dup2(infile,0);
+}
+
+void outputFile(struct input * currInput)
+{
+        int outfile = 0;
+	
+	outfile = open(currInput->outFile, O_WRONLY | O_CREAT | O_TRUNC | 0666);
+        if(outfile == -1)
+        {
+                printf("Cannot open file %s for writing\n", currInput->outFile);
+        }
+        dup2(outfile,1);
+}
+
