@@ -27,10 +27,38 @@ int main()
 		{
 			cdCommand(currInput);
 		}
+		else
+		{
+			pid_t spawnPid = -5;
+			int childStatus;
+			int execStatus;
+			spawnPid = fork();
+			switch(spawnPid)
+			{
+				case -1:
+					printf("fork Failed");
+					perror("fork() failed");
+					exit(1);
+					break;
+				case 0:
+					
+					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
+					if(execStatus == -1)
+					{
+						perror("EXEC FAILED");
+						exit(1);
+						break;
+					}
+				default:
+					spawnPid = waitpid(spawnPid, &childStatus, 0);
+				//	printf("PARENT(%d): child(%d)\n", getpid(), spawnPid);
+			}
+		}
 		//get Input
 		init(currInput);
 		currInput = getInput();
 	}
+	return 0;
 }
 
 
@@ -38,16 +66,11 @@ int main()
 struct input *parseInput(char * buffer)
 {
 	int i = 1;
-        if(strcmp(buffer, " ") == 0)
-        {
-                getInput();
-        }
         struct input *currInput = malloc(sizeof(struct input));
         char *savePtr = NULL;
 	//get command
-        char * token = strtok_r(buffer, " ", &savePtr);
-  	currInput->commandArgc[0] = strdup(token);
-	token = strtok_r(NULL, " ", &savePtr);
+        char * token = strtok_r(buffer," ", &savePtr);
+	currInput->commandArgc[0] = strdup(token);
 //	printf("%s", token);
 	while(token != '\0')
 	{
@@ -67,7 +90,7 @@ struct input *parseInput(char * buffer)
 		//==================================================================
 		////testing only
 		//==================================================================
-		else if(strcmp(currInput->commandArgc[0], "exit") == 0)
+		else if(strcmp(token, "exit") == 0)
 		{
 			exitFlag = 1;
 		}
@@ -80,10 +103,10 @@ struct input *parseInput(char * buffer)
 		token = strtok_r(NULL, " ", &savePtr);
 
 	}
-	printf("%s", currInput->commandArgc[i-1]);
+//	printf("%s", currInput->commandArgc[i-1]);
 	
 	//check if last argument is &
-	if(strcmp(currInput->commandArgc[i-1], "&\n") == 0)
+	if(strcmp(currInput->commandArgc[i-1], "&") == 0)
 	{
 		currInput->ampersand = 1;
 		printf("Background Proccess");
@@ -100,20 +123,22 @@ struct input *getInput()
         size_t len = 0;
         ssize_t nRead = 0;
         printf(": ");
-	fflush(stdout);
+//	fflush(stdout);
         nRead = getline(&buffer, &len, stdin);
+	if(strlen(buffer) == 1)
+	{
+		getInput();
+	}
+	else
+	{
+		buffer[nRead -1] = '\0';
+	}
 	struct input *currLine = parseInput(buffer);
-
 	if(buffer[0] == '#')
-	{
-		currLine->flag = 1;
-	}
-	else if(strlen(buffer) == 1)
-	{
-		printf("BLANK LINE");
-		currLine->flag =1;
-	}
-        return currLine;
+        {
+                currLine->flag =1;
+        }
+	return currLine;
 
 }
 // change directory command implementation
@@ -140,4 +165,10 @@ void init(struct input * currInput)
 		currInput->commandArgc[i] = NULL;
 		i++;
 	}
+
+	currInput->inFile = NULL;
+	currInput->outFile = NULL;
+	currInput->flag = 0;
+	currInput->ampersand = 0;
+
 }
