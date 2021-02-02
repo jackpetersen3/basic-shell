@@ -36,12 +36,10 @@ int main()
 			switch(spawnPid)
 			{
 				case -1:
-					printf("fork Failed");
 					perror("fork() failed");
 					exit(1);
 					break;
 				case 0:
-					
 					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
 					if(execStatus == -1)
 					{
@@ -69,8 +67,9 @@ struct input *parseInput(char * buffer)
         struct input *currInput = malloc(sizeof(struct input));
         char *savePtr = NULL;
 	//get command
-        char * token = strtok_r(buffer," ", &savePtr);
+        char * token = strtok_r(buffer," \n", &savePtr);
 	currInput->commandArgc[0] = strdup(token);
+	token = strtok_r(NULL, " \n", &savePtr);
 //	printf("%s", token);
 	while(token != '\0')
 	{
@@ -100,7 +99,8 @@ struct input *parseInput(char * buffer)
 			currInput->commandArgc[i] = strdup(token);
 			i++;
 		}
-		token = strtok_r(NULL, " ", &savePtr);
+		token = strtok_r(NULL, " \n", &savePtr);
+	
 
 	}
 //	printf("%s", currInput->commandArgc[i-1]);
