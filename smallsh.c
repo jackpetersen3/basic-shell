@@ -103,14 +103,14 @@ struct input *parseInput(char * buffer)
 	{
 		if(strcmp(token, "<") == 0)
 		{
-			token = strtok_r(NULL, " ", &savePtr);
+			token = strtok_r(NULL, " \n", &savePtr);
 			currInput->inFile = calloc(strlen(token)+1, sizeof(char));
 			strcpy(currInput->inFile, token);
 		}
 		//check if next token is > symbol
                 else if(strcmp(token, ">") == 0)
                 {
-                        token = strtok_r(NULL, " ", &savePtr);
+                        token = strtok_r(NULL, " \n", &savePtr);
                         currInput->outFile = calloc(strlen(token)+1, sizeof(char));
                         strcpy(currInput->outFile, token);
                 }
@@ -213,18 +213,25 @@ void inputFile(struct input * currInput)
 	{
 		printf("Cannot open file %s for reading\n", currInput->inFile);
 	}
-	dup2(infile,0);
+	dup2(infile,STDIN_FILENO);
+	fcntl(infile, F_SETFD, FD_CLOEXEC);
 }
 
 void outputFile(struct input * currInput)
 {
+	int dupErr = 0;
         int outfile = 0;
 	
-	outfile = open(currInput->outFile, O_WRONLY | O_CREAT | O_TRUNC | 0666);
+	outfile = open(currInput->outFile, O_WRONLY | O_CREAT | O_TRUNC, 0640);
         if(outfile == -1)
         {
                 printf("Cannot open file %s for writing\n", currInput->outFile);
         }
-        dup2(outfile,1);
+        dupErr = dup2(outfile,STDOUT_FILENO);
+	if(dupErr == -1)
+	{
+		printf("dup2 error");
+	}
+	fcntl(outfile, F_SETFD, FD_CLOEXEC);
 }
 
