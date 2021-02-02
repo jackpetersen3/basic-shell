@@ -11,6 +11,7 @@ void cdCommand(struct input *currInput);
 void init(struct input *currInput);
 void inputFile(struct input *currInput);
 void outputFile(struct input * currInput);
+char * strReplace(char * buffer, char *replace, char * with);
 
 int main()
 {
@@ -91,10 +92,19 @@ int main()
 //This function parses through the input line
 struct input *parseInput(char * buffer)
 {
+	int pid;
+	char myPid[30];
 	int i = 1;
         struct input *currInput = malloc(sizeof(struct input));
         char *savePtr = NULL;
 	//get command
+	if(strstr(buffer, "$$") != NULL)
+	{
+		pid = getpid();
+		sprintf(myPid, "%d", pid);
+		buffer = strReplace(buffer,"$$", myPid);
+	}
+	
         char * token = strtok_r(buffer," ", &savePtr);
 	currInput->commandArgc[0] = strdup(token);
 	token = strtok_r(NULL, " \n", &savePtr);
@@ -235,3 +245,41 @@ void outputFile(struct input * currInput)
 	fcntl(outfile, F_SETFD, FD_CLOEXEC);
 }
 
+//this function replaces all instances of $$ with the pid of the current proccess
+//===============================================================================
+//FIX BEFORE TURNING IN
+//===============================================================================
+char * strReplace(char * buffer, char *replace, char * with)
+{
+	char * result;
+	int i, count = 0;
+	int len = strlen(replace);
+	int pidLen = strlen(with);
+
+	for(i = 0; buffer[i] != '\0'; i++)
+	{
+		if(strstr(&buffer[i], replace) == &buffer[i])
+		{
+			count++;
+			i += len-1;
+		}
+	}
+			
+	result = (char*)malloc(i + count * (pidLen - len) + 1);
+	i = 0;
+	while(*buffer)
+	{
+		if(strstr(buffer,replace) == buffer)
+		{
+			strcpy(&result[i], with);
+			i+= pidLen;
+			buffer += len;
+		}
+		else
+		{
+			result[i++] = *buffer++;
+		}
+	}
+	result[i] = '\0';
+	return result;
+}		 
