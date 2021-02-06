@@ -11,12 +11,18 @@ void cdCommand(struct input *currInput);
 void init(struct input *currInput);
 void inputFile(struct input *currInput);
 void outputFile(struct input * currInput);
+void bgProcess(struct input * currInput);
 char * strReplace(char * buffer, char *replace, char * with);
 
 int main()
 {
+	int i;
 	struct input * currInput = getInput();
-	   
+	for(i = 0; i <512; i++)
+	{
+		currInput->bgProcess[i] = '\0';
+	}
+	currInput->processNum = 0;  
 	while(exitFlag != 1)
 	{
 		//check to see if user input was blank or a comment
@@ -50,23 +56,47 @@ int main()
 					exit(1);
 					break;
 				case 0:
-					//check for both input and putput redirection
-					if(currInput->inFile != NULL && currInput->outFile != NULL)
-			                {
-                        			inputFile(currInput);
-                        			outputFile(currInput);
-                        		}
-					//check for input redirection
-		                        else if(currInput->inFile != NULL)
-		                        {
-                		                inputFile(currInput);
-                        		}
-					//check for output redirection
-					else if(currInput->outFile != NULL)
-		                        {
-                		                outputFile(currInput);
-                        		}
-					
+					//foreground process
+					if(currInput->ampersand ==0)
+					{	
+						//check for both input and putput redirection
+						if(currInput->inFile != NULL && currInput->outFile != NULL)
+			                	{
+                        				inputFile(currInput);
+                        				outputFile(currInput);
+                        			}
+						//check for input redirection
+		                        	else if(currInput->inFile != NULL)
+		                        	{
+                		                	inputFile(currInput);
+                        			}
+						//check for output redirection
+						else if(currInput->outFile != NULL)
+		                        	{
+                		                	outputFile(currInput);
+                        			}
+					}
+					//background process
+					else
+					{
+						bgProcess(currInput);
+						if(currInput->inFile != NULL && currInput->outFile != NULL)
+                                                {
+                                                        inputFile(currInput);
+                                                        outputFile(currInput);
+                                                }
+						
+						else if(currInput->inFile != NULL)
+                                                {
+                                                        inputFile(currInput);
+                                                }
+
+						else if(currInput->outFile != NULL)
+                                                {
+                                                        outputFile(currInput);
+                                                }
+						
+					}
 					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
 					if(execStatus == -1)
 					{
@@ -77,7 +107,19 @@ int main()
 
 					
 				default:
-					spawnPid = waitpid(spawnPid, &childStatus, 0);
+					if(currInput->ampersand == 1)
+					{
+						//add background PID to array
+						currInput->bgProcess[currInput->processNum] = spawnPid;
+						currInput->processNum ++;
+						printf("Background process PID is %d\n", spawnPid);
+						fflush(stdout);
+					}
+						
+					else
+					{
+						spawnPid = waitpid(spawnPid, &childStatus, 0);
+					}
 				//	printf("PARENT(%d): child(%d)\n", getpid(), spawnPid);
 			}
 		}
@@ -147,7 +189,8 @@ struct input *parseInput(char * buffer)
 	if(strcmp(currInput->commandArgc[i-1], "&") == 0)
 	{
 		currInput->ampersand = 1;
-		printf("Background Proccess");
+		//printf("Background Proccess");
+		currInput->commandArgc[i-1] = '\0';	
 	}
 
         return currInput;
@@ -226,7 +269,7 @@ void inputFile(struct input * currInput)
 	dup2(infile,STDIN_FILENO);
 	fcntl(infile, F_SETFD, FD_CLOEXEC);
 }
-
+//this function handles foreground outfput file redirection
 void outputFile(struct input * currInput)
 {
 	int dupErr = 0;
@@ -243,6 +286,38 @@ void outputFile(struct input * currInput)
 		printf("dup2 error");
 	}
 	fcntl(outfile, F_SETFD, FD_CLOEXEC);
+}
+
+//this function handles background input redirection
+void bgProcess(struct input * currInput)
+{
+	int dupErr = 0;
+	int fin = 0;
+	int fout = 0;
+	//open /dev/null for reading
+	fin = open("/dev/null", O_RDONLY);
+	if(fin == -1)
+	{
+		printf("Cannot open /dev/null for input\n");
+	}
+	dupErr = dup2(fin, STDIN_FILENO);
+	if(dupErr == -1)
+	{
+		printf("Error with dup2\n");
+	}
+	 fcntl(fin, F_SETFD, FD_CLOEXEC);
+	//open /dev/null for writing
+	fout = open("/dev/null",  O_WRONLY | O_CREAT | O_TRUNC, 0640);
+	if(fout == -1)
+        {
+                printf("Cannot open /dev/null for input\n");
+        }
+        dupErr = dup2(fout, STDOUT_FILENO);
+        if(dupErr == -1)
+        {
+                printf("Error with dup2\n");
+        }
+	fcntl(fout, F_SETFD, FD_CLOEXEC);
 }
 
 //this function replaces all instances of $$ with the pid of the current proccess

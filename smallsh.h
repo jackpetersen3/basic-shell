@@ -14,7 +14,10 @@ struct input{
 	char *commandArgc[513];
 	char *inFile;
 	char * outFile;
+	int * bgProcess[513];
+	int processNum;
 	int ampersand;
 	int flag;
+	int allowBG;
 };
 
