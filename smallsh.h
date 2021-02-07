@@ -9,15 +9,15 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <time.h>
+#include <signal.h>
 
 struct input{
 	char *commandArgc[513];
 	char *inFile;
-	char * outFile;
-	int * bgProcess[513];
+	char *outFile;
+	int *bgProcess[513];
 	int processNum;
 	int ampersand;
 	int flag;
-	int allowBG;
 };
 

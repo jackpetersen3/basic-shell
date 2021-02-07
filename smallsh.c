@@ -5,24 +5,44 @@
 //shell commands
 #include "smallsh.h"
 int exitFlag = 0;
+int allowBG;
 struct input *getInput();
 struct input *parseInput(char * buffer);
 void cdCommand(struct input *currInput);
+void exit(struct input * currInput);
 void init(struct input *currInput);
 void inputFile(struct input *currInput);
 void outputFile(struct input * currInput);
 void bgProcess(struct input * currInput);
 char * strReplace(char * buffer, char *replace, char * with);
-
+//void signalSetup();
+void handle_SIGINT();
+void handle_SIGTSTP();
 int main()
 {
+	struct sigaction SIGINT_action = {0};
+        SIGINT_action.sa_handler = SIG_DFL;
+        sigfillset(&SIGINT_action.sa_mask);
+        SIGINT_action.sa_flags = 0;
+	struct sigaction SIGTSTP_action = {0};
+        SIGTSTP_action.sa_handler = handle_SIGTSTP;
+        sigfillset(&SIGTSTP_action.sa_mask);
+        SIGTSTP_action.sa_flags = SA_RESTART;
+
+        struct sigaction ignore_action = {0};
+        ignore_action.sa_handler = SIG_IGN;
+
+        sigaction(SIGINT, &ignore_action, NULL);
+        sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+	
 	int i;
 	struct input * currInput = getInput();
+//	signalSetup();
 	for(i = 0; i <512; i++)
 	{
 		currInput->bgProcess[i] = '\0';
 	}
-	currInput->processNum = 0;  
+	currInput->processNum = 0; 
 	while(exitFlag != 1)
 	{
 		//check to see if user input was blank or a comment
@@ -53,9 +73,11 @@ int main()
 			{
 				case -1:
 					perror("fork() failed");
+					fflush(stderr);
 					exit(1);
 					break;
 				case 0:
+					sigaction(SIGTSTP, &ignore_action, NULL);
 					//foreground process
 					if(currInput->ampersand ==0)
 					{	
@@ -101,6 +123,7 @@ int main()
 					if(execStatus == -1)
 					{
 						perror("EXEC FAILED");
+						fflush(stderr);
 						exit(1);
 						break;
 					}
@@ -166,13 +189,6 @@ struct input *parseInput(char * buffer)
                         currInput->outFile = calloc(strlen(token)+1, sizeof(char));
                         strcpy(currInput->outFile, token);
                 }
-		//==================================================================
-		////testing only
-		//==================================================================
-		else if(strcmp(token, "exit") == 0)
-		{
-			exitFlag = 1;
-		}
 		//=================================================================
 		else
 		{
@@ -181,14 +197,20 @@ struct input *parseInput(char * buffer)
 		}
 		token = strtok_r(NULL, " \n", &savePtr);
 	
-
 	}
 //	printf("%s", currInput->commandArgc[i-1]);
 	
 	//check if last argument is &
 	if(strcmp(currInput->commandArgc[i-1], "&") == 0)
 	{
-		currInput->ampersand = 1;
+		if(allowBG == 0)
+		{
+			currInput->ampersand = 1;
+		}
+		else
+		{
+			currInput->ampersand = 0;
+		}
 		//printf("Background Proccess");
 		currInput->commandArgc[i-1] = '\0';	
 	}
@@ -228,6 +250,7 @@ struct input *getInput()
 void cdCommand(struct input * currInput)
 {
 	if(currInput->commandArgc[1] == NULL)
+
 	{
 		chdir(getenv("HOME"));
 		printf("hello");
@@ -239,6 +262,9 @@ void cdCommand(struct input * currInput)
 		
 	}
 }
+
+//kills all running processes and exits program
+//{
 // initialize all elements of the command and argument array to NULL
 void init(struct input * currInput)
 {
@@ -265,6 +291,7 @@ void inputFile(struct input * currInput)
 	if(infile == -1)
 	{
 		printf("Cannot open file %s for reading\n", currInput->inFile);
+		fflush(stdout);
 	}
 	dup2(infile,STDIN_FILENO);
 	fcntl(infile, F_SETFD, FD_CLOEXEC);
@@ -279,11 +306,13 @@ void outputFile(struct input * currInput)
         if(outfile == -1)
         {
                 printf("Cannot open file %s for writing\n", currInput->outFile);
+		fflush(stdout);
         }
         dupErr = dup2(outfile,STDOUT_FILENO);
 	if(dupErr == -1)
 	{
 		printf("dup2 error");
+		fflush(stdout);
 	}
 	fcntl(outfile, F_SETFD, FD_CLOEXEC);
 }
@@ -299,11 +328,15 @@ void bgProcess(struct input * currInput)
 	if(fin == -1)
 	{
 		printf("Cannot open /dev/null for input\n");
+		fflush(stdout);
+
 	}
 	dupErr = dup2(fin, STDIN_FILENO);
 	if(dupErr == -1)
 	{
 		printf("Error with dup2\n");
+		fflush(stdout);
+
 	}
 	 fcntl(fin, F_SETFD, FD_CLOEXEC);
 	//open /dev/null for writing
@@ -311,11 +344,15 @@ void bgProcess(struct input * currInput)
 	if(fout == -1)
         {
                 printf("Cannot open /dev/null for input\n");
+		fflush(stdout);
+
         }
         dupErr = dup2(fout, STDOUT_FILENO);
         if(dupErr == -1)
         {
                 printf("Error with dup2\n");
+		fflush(stdout);
+
         }
 	fcntl(fout, F_SETFD, FD_CLOEXEC);
 }
@@ -357,4 +394,63 @@ char * strReplace(char * buffer, char *replace, char * with)
 	}
 	result[i] = '\0';
 	return result;
-}		 
+}	
+
+//this function sets up signal handlers
+//Much of this code is based on Exploration: Signal Handling API from the class lecture
+/*void signalSetup()
+{
+	//signal setup for sigint
+	struct sigaction SIGINT_action = {0};
+	SIGINT_action.sa_handler = SIG_DFL;
+	sigfillset(&SIGINT_action.sa_mask);
+	SIGINT_action.sa_flags = 0;
+//	sigaction(SIGINT, &SIGINT_action, NULL);
+	
+	//signal setup for sigstp
+	struct sigaction SIGTSTP_action = {0};
+	SIGTSTP_action.sa_handler = handle_SIGTSTP;
+	sigfillset(&SIGTSTP_action.sa_mask);
+	SIGTSTP_action.sa_flags = 0;
+
+	struct sigaction ignore_action = {0};
+	ignore_action.sa_handler = SIG_IGN;
+
+	sigaction(SIGINT, &ignore_action, NULL);
+	sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+	
+	
+ }*/
+//sigint handler
+void handle_SIGINT(int signo)
+{
+	write(STDOUT_FILENO, "CAUGHT SIGINT\n", 13);
+	fflush(stdout);
+	sleep(2);
+}
+//sigstp handler
+void handle_SIGTSTP(int signo)
+{
+	//background is currently allowed
+	if(allowBG == 0)
+	{
+		allowBG = 1;
+		char * message = "\nEntering foreground only mode (& is now ignored)\n";
+		write(STDOUT_FILENO, message, 50);
+		fflush(stdout);
+		write(STDOUT_FILENO, ": \n", 3);
+		fflush(stdout);
+	}
+		
+	// background is currently not allowed
+	else
+	{
+		allowBG = 0;
+		char * message = "\nExiting foreground only mode\n";
+		write(STDOUT_FILENO, message, 31);
+		fflush(stdout);
+		write(STDOUT_FILENO, ": \n", 3);
+                fflush(stdout);
+
+	}
+}	
