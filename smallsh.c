@@ -9,7 +9,8 @@ int allowBG;
 struct input *getInput();
 struct input *parseInput(char * buffer);
 void cdCommand(struct input *currInput);
-void exit(struct input * currInput);
+void exitShell(struct input * currInput);
+void status(int childStatus);
 void init(struct input *currInput);
 void inputFile(struct input *currInput);
 void outputFile(struct input * currInput);
@@ -36,11 +37,13 @@ int main()
         sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 	
 	int i;
+	int childStatus = 0;
+	int execStatus = 0;
 	struct input * currInput = getInput();
 //	signalSetup();
 	for(i = 0; i <512; i++)
 	{
-		currInput->bgProcess[i] = '\0';
+		currInput->bgProcess[i] = 0;
 	}
 	currInput->processNum = 0; 
 	while(exitFlag != 1)
@@ -57,17 +60,20 @@ int main()
 		{
 			cdCommand(currInput);
 		}
+		//user enetered status
+		else if(strcmp(currInput->commandArgc[0], "status") == 0)
+		{
+			status(childStatus);
+		}
 		//kill background proccesses and exit program
 		else if(strcmp(currInput->commandArgc[0], "exit") == 0)
 		{
-			exit(1);
+			exitShell(currInput);
 		}
 		//fork a new procceses and exec() the commands
 		else
 		{
 			pid_t spawnPid = -5;
-			int childStatus;
-			int execStatus;
 			spawnPid = fork();
 			switch(spawnPid)
 			{
@@ -221,7 +227,6 @@ struct input *parseInput(char * buffer)
 //gets input
 struct input *getInput()
 {
-	int pid = getpid();
         char *buffer = NULL;
         size_t len = 0;
         ssize_t nRead = 0;
@@ -264,7 +269,41 @@ void cdCommand(struct input * currInput)
 }
 
 //kills all running processes and exits program
-//{
+void exitShell(struct input * currInput)
+{
+	int i;
+	for(i = 0; i < 512; i++)
+	{
+		if(currInput->bgProcess[i] != 0)
+		{
+			kill(currInput->bgProcess[i], SIGTERM);
+		}
+	}
+	exit(0);
+}
+//displays status or terminating signal of the last foreground process ran by the shell
+void status(int childStatus)
+{
+	//if childStatus has not been set
+	if(childStatus == 0)
+	{
+		printf("Exit Status: 0\n");
+		fflush(stdout);
+	}
+
+	else if(WIFEXITED(childStatus) != 0)
+	{
+		printf("Exit Status: %d\n", WEXITSTATUS(childStatus));
+		fflush(stdout);
+	}
+	else if(WIFSIGNALED(childStatus) != 0)
+	{
+		printf("Process terminated with signal %d\n", WTERMSIG(childStatus));
+		fflush(stdout);
+	}
+}
+	
+	 		
 // initialize all elements of the command and argument array to NULL
 void init(struct input * currInput)
 {
