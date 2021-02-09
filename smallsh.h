@@ -12,12 +12,12 @@
 #include <signal.h>
 
 struct input{
-	char *commandArgc[513];
+	char *args[513];
 	char *inFile;
 	char *outFile;
-	int *bgProcess[513];
+	int *bgProcess[200];
 	int processNum;
-	int ampersand;
+	int isBG;
 	int flag;
 };
 

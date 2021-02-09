@@ -9,18 +9,19 @@ int allowBG;
 int main()
 {
 	struct sigaction SIGINT_action = {0};
-        SIGINT_action.sa_handler = SIG_DFL;
+        SIGINT_action.sa_handler = handle_SIGINT;
         sigfillset(&SIGINT_action.sa_mask);
-        SIGINT_action.sa_flags = 0;
+        SIGINT_action.sa_flags = SA_RESTART;
 	struct sigaction SIGTSTP_action = {0};
         SIGTSTP_action.sa_handler = handle_SIGTSTP;
         sigfillset(&SIGTSTP_action.sa_mask);
         SIGTSTP_action.sa_flags = SA_RESTART;
 
-        struct sigaction ignore_action = {0};
-        ignore_action.sa_handler = SIG_IGN;
+//        struct sigaction ignore_action = {0};
+  //      ignore_action.sa_handler = SIG_IGN;
 
-        sigaction(SIGINT, &ignore_action, NULL);
+        
+        sigaction(SIGINT, &SIGINT_action, NULL);
         sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 	
 	int i;
@@ -28,7 +29,7 @@ int main()
 	int execStatus = 0;
 	struct input * currInput = getInput();
 //	signalSetup();
-	for(i = 0; i <512; i++)
+	for(i = 0; i <199; i++)
 	{
 		currInput->bgProcess[i] = -5;
 	}
@@ -43,17 +44,17 @@ int main()
 			getInput();
 		}
 		//user entered cd
-		else if(strcmp(currInput->commandArgc[0], "cd") == 0)
+		else if(strcmp(currInput->args[0], "cd") == 0)
 		{
 			cdCommand(currInput);
 		}
 		//user enetered status
-		else if(strcmp(currInput->commandArgc[0], "status") == 0)
+		else if(strcmp(currInput->args[0], "status") == 0)
 		{
 			status(childStatus);
 		}
 		//kill background proccesses and exit program
-		else if(strcmp(currInput->commandArgc[0], "exit") == 0)
+		else if(strcmp(currInput->args[0], "exit") == 0)
 		{
 			exitShell(currInput);
 		}
@@ -64,16 +65,18 @@ int main()
 			spawnPid = fork();
 			switch(spawnPid)
 			{
+				signal(SIGINT,SIG_DFL);
 				case -1:
-					perror("fork() failed");
+					perror("fork() error");
 					fflush(stderr);
 					exit(1);
 					break;
 				case 0:
-					sigaction(SIGTSTP, &ignore_action, NULL);
+					signal(SIGINT, SIG_DFL);	
 					//foreground process
-					if(currInput->ampersand ==0)
-					{	
+					if(currInput->isBG ==0)
+					{
+						
 						//check for both input and putput redirection
 						if(currInput->inFile != NULL && currInput->outFile != NULL)
 			                	{
@@ -90,7 +93,9 @@ int main()
 		                        	{
                 		                	outputFile(currInput);
                         			}
+
 					}
+
 					//background process
 					else
 					{
@@ -112,7 +117,7 @@ int main()
                                                 }
 						
 					}
-					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
+					execStatus = execvp(currInput->args[0], currInput->args);
 					if(execStatus == -1)
 					{
 						perror("error");
@@ -121,35 +126,43 @@ int main()
 						break;
 					}
 
+
 					
 				default:
-					if(currInput->ampersand == 1)
+					if(currInput->isBG == 1)
 					{
 						//add background PID to array
 						currInput->bgProcess[currInput->processNum] = spawnPid;
 						currInput->processNum ++;
-						printf("Background process PID is %d\n", spawnPid);
+						printf("background process PID is %d\n", spawnPid);
 						fflush(stdout);
-					}
+                                        }
 						
 					else
 					{
 						pid_t childPid;
-						childPid = waitpid(spawnPid, &childStatus, 0);
-						if(!WIFEXITED(childStatus))
-						{
-							printf("background PID %s is done: terminated by signal %d\n", childPid, WTERMSIG(childStatus));
-						}
-					}
+                                                childPid = waitpid(spawnPid, &childStatus, 0);
+                                                if(!WIFEXITED(childStatus))
+                                                {
+                                                        printf("background PID %s is done: terminated by signal %d\n", childPid, WTERMSIG(childStatus));
+							fflush(stdout);
+                                                }
+                                        }
+	
+						
 					 
 					
 			}
 			
 		}
+                                                
+                  
+
+		//check for exiting background processes and report pid and status if they exit
 		pid_t bgPID;
                 int bgStatus;
                 int j;
-                for(j = 0;j < 512; j++)
+                for(j = 0;j < 199; j++)
                 {
                 	bgPID = waitpid(currInput->bgProcess[j], &bgStatus, WNOHANG);
                         if(bgPID != -1 && bgPID != 0)
@@ -189,7 +202,7 @@ struct input *parseInput(char * buffer)
 	}
 	
         char * token = strtok_r(buffer," ", &savePtr);
-	currInput->commandArgc[0] = strdup(token);
+	currInput->args[0] = strdup(token);
 	token = strtok_r(NULL, " \n", &savePtr);
 	while(token != '\0')
 	{
@@ -209,7 +222,7 @@ struct input *parseInput(char * buffer)
 		//=================================================================
 		else
 		{
-			currInput->commandArgc[i] = strdup(token);
+			currInput->args[i] = strdup(token);
 			i++;
 		}
 		token = strtok_r(NULL, " \n", &savePtr);
@@ -218,17 +231,17 @@ struct input *parseInput(char * buffer)
 
 	
 	//check if last argument is &
-	if(strcmp(currInput->commandArgc[i-1], "&") == 0)
+	if(strcmp(currInput->args[i-1], "&") == 0)
 	{
 		if(allowBG == 0)
 		{
-			currInput->ampersand = 1;
+			currInput->isBG = 1;
 		}
 		else
 		{
-			currInput->ampersand = 0;
+			currInput->isBG = 0;
 		}
-		currInput->commandArgc[i-1] = '\0';	
+		currInput->args[i-1] = '\0';	
 	}
 
         return currInput;
@@ -272,14 +285,14 @@ void freeAll(struct input * currInput)
 // change directory command implementation
 void cdCommand(struct input * currInput)
 {
-	if(currInput->commandArgc[1] == NULL)
+	if(currInput->args[1] == NULL)
 
 	{
 		chdir(getenv("HOME"));
 	}
 	else
 	{
-		chdir(currInput->commandArgc[1]);
+		chdir(currInput->args[1]);
 		
 	}
 }
@@ -288,7 +301,7 @@ void cdCommand(struct input * currInput)
 void exitShell(struct input * currInput)
 {
 	int i;
-	for(i = 0; i < 512; i++)
+	for(i = 0; i < 199; i++)
 	{
 		if(currInput->bgProcess[i] != 0)
 		{
@@ -326,14 +339,14 @@ void init(struct input * currInput)
 	int i;
 	for(i = 0; i < 513; i++)
 	{
-		currInput->commandArgc[i] = NULL;
+		currInput->args[i] = NULL;
 		i++;
 	}
 
 	currInput->inFile = NULL;
 	currInput->outFile = NULL;
 	currInput->flag = 0;
-	currInput->ampersand = 0;
+	currInput->isBG = 0;
 
 }
 
@@ -479,9 +492,8 @@ char * strReplace(char * buffer, char *replace, char * with)
 //sigint handler
 void handle_SIGINT(int signo)
 {
-	write(STDOUT_FILENO, "CAUGHT SIGINT\n", 13);
-	fflush(stdout);
-	sleep(2);
+	signal(SIGINT, SIG_IGN);
+
 }
 //sigstp handler
 void handle_SIGTSTP(int signo)
