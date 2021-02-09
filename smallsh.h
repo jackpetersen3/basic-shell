@@ -21,3 +21,18 @@ struct input{
 	int flag;
 };
 
+
+struct input *getInput();
+struct input *parseInput(char * buffer);
+void cdCommand(struct input *currInput);
+void exitShell(struct input * currInput);
+void status(int childStatus);
+void init(struct input *currInput);
+void inputFile(struct input *currInput);
+void outputFile(struct input * currInput);
+void bgProcess(struct input * currInput);
+char * strReplace(char * buffer, char *replace, char * with);
+//void signalSetup();
+void handle_SIGINT();
+void handle_SIGTSTP();
+void freeAll(struct input *currInput);

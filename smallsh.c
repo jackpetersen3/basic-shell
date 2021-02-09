@@ -6,19 +6,6 @@
 #include "smallsh.h"
 int exitFlag = 0;
 int allowBG;
-struct input *getInput();
-struct input *parseInput(char * buffer);
-void cdCommand(struct input *currInput);
-void exitShell(struct input * currInput);
-void status(int childStatus);
-void init(struct input *currInput);
-void inputFile(struct input *currInput);
-void outputFile(struct input * currInput);
-void bgProcess(struct input * currInput);
-char * strReplace(char * buffer, char *replace, char * with);
-//void signalSetup();
-void handle_SIGINT();
-void handle_SIGTSTP();
 int main()
 {
 	struct sigaction SIGINT_action = {0};
@@ -43,7 +30,7 @@ int main()
 //	signalSetup();
 	for(i = 0; i <512; i++)
 	{
-		currInput->bgProcess[i] = 0;
+		currInput->bgProcess[i] = -5;
 	}
 	currInput->processNum = 0; 
 	while(exitFlag != 1)
@@ -128,7 +115,7 @@ int main()
 					execStatus = execvp(currInput->commandArgc[0], currInput->commandArgc);
 					if(execStatus == -1)
 					{
-						perror("EXEC FAILED");
+						perror("error");
 						fflush(stderr);
 						exit(1);
 						break;
@@ -147,12 +134,37 @@ int main()
 						
 					else
 					{
-						spawnPid = waitpid(spawnPid, &childStatus, 0);
+						pid_t childPid;
+						childPid = waitpid(spawnPid, &childStatus, 0);
+						if(!WIFEXITED(childStatus))
+						{
+							printf("background PID %s is done: terminated by signal %d\n", childPid, WTERMSIG(childStatus));
+						}
 					}
-				//	printf("PARENT(%d): child(%d)\n", getpid(), spawnPid);
+					 
+					
 			}
+			
 		}
+		pid_t bgPID;
+                int bgStatus;
+                int j;
+                for(j = 0;j < 512; j++)
+                {
+                	bgPID = waitpid(currInput->bgProcess[j], &bgStatus, WNOHANG);
+                        if(bgPID != -1 && bgPID != 0)
+                        {
+                        	if(WIFEXITED(bgStatus))
+                                {
+                                	printf("background pid %d is done: exit status %d\n", bgPID, WEXITSTATUS(bgStatus));
+                                        fflush(stdout);
+                                        currInput->bgProcess[j] = 0;
+                                }
+                        }
+		}
+
 		//get Input
+	//	freeAll(currInput);
 		init(currInput);
 		currInput = getInput();
 	}
@@ -179,7 +191,6 @@ struct input *parseInput(char * buffer)
         char * token = strtok_r(buffer," ", &savePtr);
 	currInput->commandArgc[0] = strdup(token);
 	token = strtok_r(NULL, " \n", &savePtr);
-//	printf("%s", token);
 	while(token != '\0')
 	{
 		if(strcmp(token, "<") == 0)
@@ -204,7 +215,7 @@ struct input *parseInput(char * buffer)
 		token = strtok_r(NULL, " \n", &savePtr);
 	
 	}
-//	printf("%s", currInput->commandArgc[i-1]);
+
 	
 	//check if last argument is &
 	if(strcmp(currInput->commandArgc[i-1], "&") == 0)
@@ -217,7 +228,6 @@ struct input *parseInput(char * buffer)
 		{
 			currInput->ampersand = 0;
 		}
-		//printf("Background Proccess");
 		currInput->commandArgc[i-1] = '\0';	
 	}
 
@@ -251,6 +261,14 @@ struct input *getInput()
 	return currLine;
 
 }
+//free memory
+void freeAll(struct input * currInput)
+{
+	struct input *temp = currInput;
+	free(temp->inFile);
+	free(temp->outFile);
+	free(temp);
+}
 // change directory command implementation
 void cdCommand(struct input * currInput)
 {
@@ -258,12 +276,10 @@ void cdCommand(struct input * currInput)
 
 	{
 		chdir(getenv("HOME"));
-		printf("hello");
 	}
 	else
 	{
 		chdir(currInput->commandArgc[1]);
-		printf("goodbye");
 		
 	}
 }
@@ -276,7 +292,7 @@ void exitShell(struct input * currInput)
 	{
 		if(currInput->bgProcess[i] != 0)
 		{
-			kill(currInput->bgProcess[i], SIGTERM);
+			kill(*currInput->bgProcess[i], SIGTERM);
 		}
 	}
 	exit(0);
@@ -409,7 +425,7 @@ char * strReplace(char * buffer, char *replace, char * with)
 
 	for(i = 0; buffer[i] != '\0'; i++)
 	{
-		if(strstr(&buffer[i], replace) == &buffer[i])
+		if(strstr(&buffer[i], replace) == "$$")
 		{
 			count++;
 			i += len-1;
