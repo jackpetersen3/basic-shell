@@ -4,10 +4,13 @@
 //This program acts as a shell and will perform basic 
 //shell commands
 #include "smallsh.h"
-int exitFlag = 0;
+//globals
+int exitStatus = 0;
 int allowBG;
 int main()
 {
+	//Set up signal handlers
+	//based on code from Explortation: Signal Handling API
 	struct sigaction SIGINT_action = {0};
         SIGINT_action.sa_handler = handle_SIGINT;
         sigfillset(&SIGINT_action.sa_mask);
@@ -17,10 +20,7 @@ int main()
         sigfillset(&SIGTSTP_action.sa_mask);
         SIGTSTP_action.sa_flags = SA_RESTART;
 
-//        struct sigaction ignore_action = {0};
-  //      ignore_action.sa_handler = SIG_IGN;
-
-        
+ 	//call signal handlers       
         sigaction(SIGINT, &SIGINT_action, NULL);
         sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 	
@@ -28,13 +28,13 @@ int main()
 	int childStatus = 0;
 	int execStatus = 0;
 	struct input * currInput = getInput();
-//	signalSetup();
+	//initialze background pid array
 	for(i = 0; i <199; i++)
 	{
 		currInput->bgProcess[i] = -5;
 	}
 	currInput->processNum = 0; 
-	while(exitFlag != 1)
+	while(exitStatus != 1)
 	{
 		//check to see if user input was blank or a comment
 		if(currInput->flag == 1)
@@ -65,17 +65,17 @@ int main()
 			spawnPid = fork();
 			switch(spawnPid)
 			{
-				signal(SIGINT,SIG_DFL);
 				case -1:
 					perror("fork() error");
 					fflush(stderr);
 					exit(1);
 					break;
 				case 0:
-					signal(SIGINT, SIG_DFL);	
+						
 					//foreground process
 					if(currInput->isBG ==0)
 					{
+						signal(SIGINT,SIG_DFL);
 						
 						//check for both input and putput redirection
 						if(currInput->inFile != NULL && currInput->outFile != NULL)
@@ -117,6 +117,7 @@ int main()
                                                 }
 						
 					}
+					//Execute commands
 					execStatus = execvp(currInput->args[0], currInput->args);
 					if(execStatus == -1)
 					{
@@ -125,10 +126,10 @@ int main()
 						exit(1);
 						break;
 					}
-
-
+				//is parent
 					
 				default:
+					//is running in background
 					if(currInput->isBG == 1)
 					{
 						//add background PID to array
@@ -140,24 +141,12 @@ int main()
 						
 					else
 					{
-						pid_t childPid;
-                                                childPid = waitpid(spawnPid, &childStatus, 0);
-                                                if(!WIFEXITED(childStatus))
-                                                {
-                                                        printf("background PID %s is done: terminated by signal %d\n", childPid, WTERMSIG(childStatus));
-							fflush(stdout);
-                                                }
-                                        }
-	
-						
-					 
-					
+                                                spawnPid = waitpid(spawnPid, &childStatus, 0);
+                                        }			
 			}
 			
 		}
-                                                
-                  
-
+                                               
 		//check for exiting background processes and report pid and status if they exit
 		pid_t bgPID;
                 int bgStatus;
@@ -173,11 +162,14 @@ int main()
                                         fflush(stdout);
                                         currInput->bgProcess[j] = 0;
                                 }
+				else if(WIFSIGNALED(bgStatus))
+				{
+					printf("background pid %d is done: terminated by signal %d\n", bgPID, WTERMSIG(bgStatus));
+				}
                         }
 		}
 
 		//get Input
-	//	freeAll(currInput);
 		init(currInput);
 		currInput = getInput();
 	}
@@ -219,7 +211,7 @@ struct input *parseInput(char * buffer)
                         currInput->outFile = calloc(strlen(token)+1, sizeof(char));
                         strcpy(currInput->outFile, token);
                 }
-		//=================================================================
+		
 		else
 		{
 			currInput->args[i] = strdup(token);
@@ -308,6 +300,7 @@ void exitShell(struct input * currInput)
 			kill(*currInput->bgProcess[i], SIGTERM);
 		}
 	}
+	exitStatus = 0;
 	exit(0);
 }
 //displays status or terminating signal of the last foreground process ran by the shell
@@ -327,13 +320,13 @@ void status(int childStatus)
 	}
 	else if(WIFSIGNALED(childStatus) != 0)
 	{
-		printf("Process terminated with signal %d\n", WTERMSIG(childStatus));
+		printf("Process terminated pid signal %d\n", WTERMSIG(childStatus));
 		fflush(stdout);
 	}
 }
 	
 	 		
-// initialize all elements of the command and argument array to NULL
+// initialize all elements of the command and argument array to NULL as well as other vars
 void init(struct input * currInput)
 {
 	int i;
@@ -350,7 +343,7 @@ void init(struct input * currInput)
 
 }
 
-//this program handes file input redirection
+//this function handles file input redirection
 void inputFile(struct input * currInput)
 {
 	int infile = 0;
@@ -402,7 +395,7 @@ void bgProcess(struct input * currInput)
 	dupErr = dup2(fin, STDIN_FILENO);
 	if(dupErr == -1)
 	{
-		printf("Error with dup2\n");
+		printf("Error pid dup2\n");
 		fflush(stdout);
 
 	}
@@ -418,42 +411,40 @@ void bgProcess(struct input * currInput)
         dupErr = dup2(fout, STDOUT_FILENO);
         if(dupErr == -1)
         {
-                printf("Error with dup2\n");
+                printf("Error pid dup2\n");
 		fflush(stdout);
 
         }
 	fcntl(fout, F_SETFD, FD_CLOEXEC);
 }
 
-//this function replaces all instances of $$ with the pid of the current proccess
-//===============================================================================
-//FIX BEFORE TURNING IN
-//===============================================================================
-char * strReplace(char * buffer, char *replace, char * with)
+//this function replaces all instances of $$ pid the pid of the current proccess
+//Sources: https://www.tutorialspoint.com/c-program-to-replace-a-word-in-a-text-by-another-given-word
+char * strReplace(char * buffer, char *replace, char * pid)
 {
 	char * result;
-	int i, count = 0;
-	int len = strlen(replace);
-	int pidLen = strlen(with);
+	int i = 0;
+	int count = 0;
+	int pidLen = strlen(pid);
 
 	for(i = 0; buffer[i] != '\0'; i++)
 	{
-		if(strstr(&buffer[i], replace) == "$$")
+		if(strstr(&buffer[i], replace) != NULL)
 		{
 			count++;
-			i += len-1;
+			i++;
 		}
 	}
 			
-	result = (char*)malloc(i + count * (pidLen - len) + 1);
+	result = malloc(i + count * (pidLen - 2) + 1 *sizeof(char));
 	i = 0;
 	while(*buffer)
 	{
 		if(strstr(buffer,replace) == buffer)
 		{
-			strcpy(&result[i], with);
+			strcpy(&result[i], pid);
 			i+= pidLen;
-			buffer += len;
+			buffer += 2;
 		}
 		else
 		{
@@ -464,34 +455,10 @@ char * strReplace(char * buffer, char *replace, char * with)
 	return result;
 }	
 
-//this function sets up signal handlers
-//Much of this code is based on Exploration: Signal Handling API from the class lecture
-/*void signalSetup()
-{
-	//signal setup for sigint
-	struct sigaction SIGINT_action = {0};
-	SIGINT_action.sa_handler = SIG_DFL;
-	sigfillset(&SIGINT_action.sa_mask);
-	SIGINT_action.sa_flags = 0;
-//	sigaction(SIGINT, &SIGINT_action, NULL);
-	
-	//signal setup for sigstp
-	struct sigaction SIGTSTP_action = {0};
-	SIGTSTP_action.sa_handler = handle_SIGTSTP;
-	sigfillset(&SIGTSTP_action.sa_mask);
-	SIGTSTP_action.sa_flags = 0;
-
-	struct sigaction ignore_action = {0};
-	ignore_action.sa_handler = SIG_IGN;
-
-	sigaction(SIGINT, &ignore_action, NULL);
-	sigaction(SIGTSTP, &SIGTSTP_action, NULL);
-	
-	
- }*/
 //sigint handler
 void handle_SIGINT(int signo)
 {
+	//ignore sigint unless otherwise specified
 	signal(SIGINT, SIG_IGN);
 
 }
